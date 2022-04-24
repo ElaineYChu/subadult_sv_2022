@@ -9,7 +9,7 @@ Please cite this compendium as:
 > Chu, E.Y., Stull, K.E., & Sylvester, A.D. (2022). Compendium of R code and data for *An alternative size variable for allometric investigations in subadults.* Accessed *Current Date*.
 
 ## The data
-All data are from the [Subadult Virtual Anthropology Database](https://zenodo.org/communities/svad) (SVAD). Specifically, this project uses portions of data from the [United States](10.5281/zenodo.5193208) and [South Africa](https://zenodo.org/record/3950301#.YmRaW9rMIdU), which are also directly provided in the [data folder](data).
+All data are from the [Subadult Virtual Anthropology Database](https://zenodo.org/communities/svad) (SVAD). Specifically, this project uses portions of data from the [United States](https://zenodo.org/record/5193208#.YmWLkdrMLao) and [South Africa](https://zenodo.org/record/3950301#.YmRaW9rMIdU), which are also directly provided in the [data folder](data).
 
 ## How to use this repository
 There are two ways to add this repository to a local system:  
