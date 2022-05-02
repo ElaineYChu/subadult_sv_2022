@@ -33,7 +33,7 @@ Inside the **subadult_sv_2022** folder, you should find the following folders an
 
 * [data](data) - A folder containing the original subsetted data from SVAD and subsequent files after data manipulation  
 * [results](results) - A folder housing the resulting files from all analyses  
-* [documentation](documentation.rmd) - A RMarkdown file containing all code and analyses to replicate publication results. To view a rendered .HTML version of this file, [click HERE](https://rpubs.com/elainechu/subadult_sv_2022)  
+* [documentation](documentation.Rmd) - A RMarkdown file containing all code and analyses to replicate publication results. To view a rendered .HTML version of this file, [click HERE](https://rpubs.com/elainechu/subadult_sv_2022)  
 * [elaine_theme](elaine_theme.R) - A personalized theme for plots using `ggplot2`  
 
 
