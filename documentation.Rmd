@@ -1,0 +1,551 @@
+---
+title: "Full documentation for: An alternative size variable for allometric investigations in subadults"
+author: "Elaine Y. Chu"
+date: "April 23, 2022"
+output: 
+  rmdformats::robobook:
+    toc_float: false
+---
+
+```{r Global Chunk, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, fig.width=8, fig.height=8, dpi=600)
+```
+
+# Overview
+This research compendium provides code and steps needed to replicate the results of the publication: 
+
+> Chu, E.Y., Stull, K.E., & Sylvester, A.D. (2022). An alternative size variable for allometric investigations in subadults. *In review.*
+
+To run the code for this paper locally, please ensure that [R](https://cran.r-project.org/), and optionally [RStudio](https://www.rstudio.com/), are installed on the local system. 
+
+Additionally, the following packages are used and should be installed using `install.packages("package_name")`:  
+
+* [MVN](https://cran.r-project.org/web/packages/MVN/MVN.pdf)  
+* [EnvStats](https://cran.r-project.org/web/packages/EnvStats/EnvStats.pdf)  
+* [caret](https://topepo.github.io/caret/)  
+* [lmodel2](https://cran.r-project.org/web/packages/lmodel2/lmodel2.pdf)  
+* [tidyverse](https://www.tidyverse.org/)    
+* [magrittr](https://cran.r-project.org/web/packages/magrittr/vignettes/magrittr.html)  
+* [gridExtra](https://cran.r-project.org/web/packages/gridExtra/vignettes/arrangeGrob.html)  
+
+### How to cite
+Please cite this compendium as:  
+
+> Chu, E.Y., Stull, K.E., & Sylvester, A.D. (2022). Compendium of R code and data for *An alternative size variable for allometric investigations in subadults.* Accessed *Current Date*.
+
+## The Data
+All data are from the [Subadult Virtual Anthropology Database](https://zenodo.org/communities/svad). Specifically, this project uses portions of data from the [United States](https://zenodo.org/record/5193208#.YmWDqdrMKUk) and [South Africa](https://zenodo.org/record/3950301#.YmRaW9rMIdU), which are also directly provided in the **data** folder.
+
+## Organization
+This document is divided into three sections:  
+1. [Data Manipulation](#munge)  
+2. [Data Analysis](#analyze)  
+3. [Data Visualization](#visualize)
+
+## Setup
+After the repository is on your local system, the following code is to setup your local R/RStudio enviornment:
+
+```{r Setup, message=F}
+rm(list=ls())  # clear global environment
+
+if (!(grepl("subadult_sv_2022",getwd()))) {
+  stop("Please set your working directory to 'subadult_sv_2022'.")
+}
+
+## Load required libraries
+library(MVN)
+library(caret)
+library(lmodel2)
+library(tidyverse)
+library(gridExtra)
+
+## Load personal ggplot2 theme
+source("elaine_theme.R")
+```
+
+# Data Manipulation  {#munge}
+
+## 1. Import data  
+
+* Located in **data** folder  
+* Stored as `.rds` files  
+
+```{r Import Data}
+us <- readRDS("data/us.rds")  # United States
+za <- readRDS("data/za.rds")  # South Africa (Zuid-Afrika)
+```
+
+## 2. Calculate the geometric mean of long bone lengths  
+
+* Geometric mean == "GM"  
+* Long bone == "lb"  
+
+```{r Calc GM, eval=F}
+# U.S.
+GM_len_us <- rep(NA, nrow(us))  # initialize empty vector for all us individuals
+for(i in 1:nrow(us)){
+  # extract lb lengths
+  vars <- c(us[[i,"FDL"]],us[[i,"TDL"]],us[[i,"HDL"]],us[[i,"RDL"]])  
+  # calculate GM using function from EnvStats
+  GM_len_us[i] <- geoMean(vars)  
+}
+
+# Z.A.
+GM_len_za <- rep(NA, nrow(za))  # initialize empty vector for all za individuals
+for(i in 1:nrow(za)){
+  # extract lb lengths
+  vars <- c(za[[i,"FDL"]],za[[i,"TDL"]],za[[i,"HDL"]],za[[i,"RDL"]])  
+  # calculate GM using function from EnvStats
+  GM_len_za[i] <- geoMean(vars)  
+}
+```
+
+## 3. Separate demographic and metric data 
+```{r Separate demographic and metric data, eval=F}
+# U.S.
+demo_us <- us[1:4]  # demographic columns
+metric_us <- cbind(us[5:ncol(us)],GM_len)  # metric columns, including GM_len
+
+# Z.A.
+demo_za <- za[1:4]  # demographic columns
+metric_za <- cbind(za[5:ncol(za)],GM_len)  # metric columns, including GM_len
+```
+
+## 4. Combine demographic and logged metric data into a new data frame  
+
+* Save as `*_log.rds` in **data** folder  
+
+```{r Convert to log, eval=F}
+# Combine columns, log metric data
+us_log <- cbind(demo_us,log(metric_us))  
+za_log <- cbind(demo_za,log(metric_za))  # combine columns, log metric data
+
+# Save data
+saveRDS(us_log,"data/us_log.rds")
+saveRDS(za_log,"data/za_log.rds")
+```
+
+## 5. Set up for *k*-fold cross-validation with 10 folds  
+
+* Set the seed for reproducibility  
+* Save as `k_folds_list.rds`  
+
+```{r k-fold, eval=F}
+set.seed(2021)  # set seed for reproducibility
+
+# k-Fold model construction using reduced (standard) major axis
+k_folds <- createFolds(us_log$medrec, k=10)  # generate 10 folds
+
+saveRDS(k_folds, "results/k_folds_list.rds")  # save
+```
+
+
+# Data Analysis  {#analyze}
+
+## 1. Test for multivariate normality  {#Fig2}
+
+**Mardia Test and Q-Q Plot:**
+
+* Retain Q-Q Plot for **Figure 2**   
+
+```{r Mardia, eval=F}
+mvn(us[5:ncol(us)],mvnTest="mardia",covariance=TRUE,
+    multivariatePlot="qq",showOutliers=TRUE)
+```
+
+**Henze-Zinkler Test:**
+
+```{r HZ, eval=F}
+mvn(us[5:ncol(us)],mvnTest="hz",covariance=TRUE,showOutliers=TRUE)
+```
+
+## 2. Kendall's Rank Correlation Coefficient
+
+* Retain correlation values with stature as **Table 5**  
+* Save all correlations as `variable_correlations.csv`    
+
+```{r Kendall Tau, eval=F}
+corr <- cor(us[5:ncol(us)], method="kendall")
+corr[,1]  # correlation values with stature - Table 5
+write.csv(corr,"results/variable_correlations.csv",row.names=FALSE)  # save
+```
+
+## 3. Reduced Major-Axis (RMA) Regression  
+
+* Bivariate regression with *size variable ~ stature*  
+* Storing each slope and intercept in the list `params`  
+* Save as `rma_params_k_fold.rds`   
+
+```{r RMA 1, eval=F}
+for(c in 6:ncol(us_log)) {
+  size_var <- colnames(us_log)[c]
+  params[[size_var]] <- list()
+  slope <- c()
+  int <- c()
+  
+  for(kk in 1:length(k_folds)) {
+    row_idx <- k_folds[[kk]]
+    model <- suppressMessages(lmodel2(us_log[-row_idx,c] ~ 
+                                        us_log[-row_idx,"stature"]))
+    slope <- c(slope, model$regression.results$Slope[3])
+    int <- c(int, model$regression.results$Intercept[3])
+  }
+  params[[size_var]]$slope <- slope
+  params[[size_var]]$int <- int
+}
+
+saveRDS(params, "results/rma_params_k_fold.rds")  # save parameter list
+```
+
+## 4. Compile the contents of `params` into a data frame 
+
+* Each row is the potential size variable, with mean slope and intercept as the two columns  
+* Add a new row with distance of mean slope from 1 for each variable  
+* Retain as **Table 5**  
+* Save file as `rma_coefficients.csv`  
+
+```{r RMA 2, eval=F}
+# Initialize data frame with column `size_var` as each variable in `params`
+rma_results <- data.frame(size_var=names(params))
+
+for(v in 1:nrow(rma_results)) {
+  rma_results$slope[v] <- mean(params[[v]]$slope)  # mean slope
+  rma_results$intercept[v] <- mean(params[[v]]$int)  # mean intercept
+}
+
+length_idx <- which(rma_results$size_var %in% 
+                      c("FDL","TDL","HDL","RDL"))  # identify lb lengths
+rma_results <- rma_results[-length_idx,]  # remove lb lengths (n/a as size var)
+rma_results$diff <- abs(1-rma_results$slope)  # calculate slope distance from 1
+rownames(rma_results) <- NULL  # reset row numbers
+
+write.csv(rma_results,"results/rma_coefficients.csv",row.names=FALSE)  # save
+```
+
+*In this step, RMSB, FMSB, and GM_msb are identified as having the closest slopes to 1 and are therefore retained for the rest of the analyses.*
+
+## 5. Calculate allometry coefficients for each long bone length (**U.S. data**)
+
+* Stature, RMSB, FMSB, GM_msb, GM_len  
+
+```{r Allometry Coefs - U.S., eval=F}
+## Allometric Coefficients - FDL
+fdl_stature <- lmodel2(us_log[["FDL"]]~
+                         us_log[["stature"]])$regression.results[3,]
+fdl_rmsb <- lmodel2(us_log[["FDL"]]~
+                      us_log[["RMSB"]])$regression.results[3,]
+fdl_fmsb <- lmodel2(us_log[["FDL"]]~
+                      us_log[["FMSB"]])$regression.results[3,]
+fdl_gm_msb <- lmodel2(us_log[["FDL"]]~
+                        us_log[["GM_msb"]])$regression.results[3,]
+fdl_gm_len <- lmodel2(us_log[["FDL"]]~
+                        us_log[["GM_len"]])$regression.results[3,]
+
+## Allometric Coefficients - TDL
+tdl_stature <- lmodel2(us_log[["TDL"]]~
+                         us_log[["stature"]])$regression.results[3,]
+tdl_rmsb <- lmodel2(us_log[["TDL"]]~
+                      us_log[["RMSB"]])$regression.results[3,]
+tdl_fmsb <- lmodel2(us_log[["TDL"]]~
+                      us_log[["FMSB"]])$regression.results[3,]
+tdl_gm_msb <- lmodel2(us_log[["TDL"]]~
+                        us_log[["GM_msb"]])$regression.results[3,]
+tdl_gm_len <- lmodel2(us_log[["TDL"]]~
+                        us_log[["GM_len"]])$regression.results[3,]
+
+## Allometric Coefficients - HDL
+hdl_stature <- lmodel2(us_log[["HDL"]]~
+                         us_log[["stature"]])$regression.results[3,]
+hdl_rmsb <- lmodel2(us_log[["HDL"]]~
+                      us_log[["RMSB"]])$regression.results[3,]
+hdl_fmsb <- lmodel2(us_log[["HDL"]]~
+                      us_log[["FMSB"]])$regression.results[3,]
+hdl_gm_msb <- lmodel2(us_log[["HDL"]]~
+                        us_log[["GM_msb"]])$regression.results[3,]
+hdl_gm_len <- lmodel2(us_log[["HDL"]]~
+                        us_log[["GM_len"]])$regression.results[3,]
+
+## Allometric Coefficients - RDL
+rdl_stature <- lmodel2(us_log[["RDL"]]~
+                         us_log[["stature"]])$regression.results[3,]
+rdl_rmsb <- lmodel2(us_log[["RDL"]]~
+                      us_log[["RMSB"]])$regression.results[3,]
+rdl_fmsb <- lmodel2(us_log[["RDL"]]~
+                      us_log[["FMSB"]])$regression.results[3,]
+rdl_gm_msb <- lmodel2(us_log[["RDL"]]~
+                        us_log[["GM_msb"]])$regression.results[3,]
+rdl_gm_len <- lmodel2(us_log[["RDL"]]~
+                        us_log[["GM_len"]])$regression.results[3,]
+```
+
+## 6. Compile all allometry coefficients into a single data frame (**U.S. data**)  
+
+* Save as `us_allometry_coefs.csv`  
+
+```{r CompDF - U.S., eval=F}
+long_bone <- c(rep("Humerus",5),rep("Radius",5),
+               rep("Femur",5),rep("Tibia",5))
+method <- rep(c("Stature","RMSB","FMSB","GM_Midshaft","GM_Length"),4)
+slope <- c(hdl_stature$Slope,hdl_rmsb$Slope,hdl_fmsb$Slope,
+           hdl_gm_msb$Slope,hdl_gm_len$Slope,
+           rdl_stature$Slope,rdl_rmsb$Slope,rdl_fmsb$Slope,
+           rdl_gm_msb$Slope,rdl_gm_len$Slope,
+           fdl_stature$Slope,fdl_rmsb$Slope,fdl_fmsb$Slope,
+           fdl_gm_msb$Slope,fdl_gm_len$Slope,
+           tdl_stature$Slope,tdl_rmsb$Slope,tdl_fmsb$Slope,
+           tdl_gm_msb$Slope,tdl_gm_len$Slope)
+compDF <- data.frame(long_bone, method, slope)  # combine into compDf
+compDF$slope <- as.numeric(as.character(compDF$slope))  # make numeric
+compDF$long_bone <- factor(compDF$long_bone, 
+                           levels=c("Humerus","Radius","Femur","Tibia"))
+compDF$method <- factor(compDF$method, 
+                        levels=c("Stature","RMSB","FMSB",
+                                 "GM_Midshaft","GM_Length"))
+
+write.csv(compDF,"results/us_allometry_coefs.csv",row.names=FALSE)  # save
+```
+
+## 7. Calculate allometry coefficients for each long bone length (**Z.A. data**)
+
+* Stature, RMSB, FMSB, GM_msb, GM_len  
+
+```{r Allometry Coefs - Z.A., eval=F}
+## Allometric Coefficients - FDL
+fdl_stature <- lmodel2(za_log[["FDL"]]~
+                         za_log[["stature"]])$regression.results[3,]
+fdl_rmsb <- lmodel2(za_log[["FDL"]]~
+                      za_log[["RMSB"]])$regression.results[3,]
+fdl_fmsb <- lmodel2(za_log[["FDL"]]~
+                      za_log[["FMSB"]])$regression.results[3,]
+fdl_gm_msb <- lmodel2(za_log[["FDL"]]~
+                        za_log[["GM_msb"]])$regression.results[3,]
+fdl_gm_len <- lmodel2(za_log[["FDL"]]~
+                        za_log[["GM_len"]])$regression.results[3,]
+
+## Allometric Coefficients - TDL
+tdl_stature <- lmodel2(za_log[["TDL"]]~
+                         za_log[["stature"]])$regression.results[3,]
+tdl_rmsb <- lmodel2(za_log[["TDL"]]~
+                      za_log[["RMSB"]])$regression.results[3,]
+tdl_fmsb <- lmodel2(za_log[["TDL"]]~
+                      za_log[["FMSB"]])$regression.results[3,]
+tdl_gm_msb <- lmodel2(za_log[["TDL"]]~
+                        za_log[["GM_msb"]])$regression.results[3,]
+tdl_gm_len <- lmodel2(za_log[["TDL"]]~
+                        za_log[["GM_len"]])$regression.results[3,]
+
+## Allometric Coefficients - HDL
+hdl_stature <- lmodel2(za_log[["HDL"]]~
+                         za_log[["stature"]])$regression.results[3,]
+hdl_rmsb <- lmodel2(za_log[["HDL"]]~
+                      za_log[["RMSB"]])$regression.results[3,]
+hdl_fmsb <- lmodel2(za_log[["HDL"]]~
+                      za_log[["FMSB"]])$regression.results[3,]
+hdl_gm_msb <- lmodel2(za_log[["HDL"]]~
+                        za_log[["GM_msb"]])$regression.results[3,]
+hdl_gm_len <- lmodel2(za_log[["HDL"]]~
+                        za_log[["GM_len"]])$regression.results[3,]
+
+## Allometric Coefficients - RDL
+rdl_stature <- lmodel2(za_log[["RDL"]]~
+                         za_log[["stature"]])$regression.results[3,]
+rdl_rmsb <- lmodel2(za_log[["RDL"]]~
+                      za_log[["RMSB"]])$regression.results[3,]
+rdl_fmsb <- lmodel2(za_log[["RDL"]]~
+                      za_log[["FMSB"]])$regression.results[3,]
+rdl_gm_msb <- lmodel2(za_log[["RDL"]]~
+                        za_log[["GM_msb"]])$regression.results[3,]
+rdl_gm_len <- lmodel2(za_log[["RDL"]]~
+                        za_log[["GM_len"]])$regression.results[3,]
+```
+
+## 8. Compile all allometry coefficients into a single data frame (**Z.A. data**)   
+
+* Save as `za_allometry_coefs.csv`  
+
+```{r CompDF - Z.A., eval=F}
+long_bone <- c(rep("Humerus",5),rep("Radius",5),rep("Femur",5),rep("Tibia",5))
+method <- rep(c("Stature","RMSB","FMSB","GM_Midshaft","GM_Length"),4)
+slope <- c(hdl_stature$Slope,hdl_rmsb$Slope,hdl_fmsb$Slope,
+           hdl_gm_msb$Slope,hdl_gm_len$Slope,
+           rdl_stature$Slope,rdl_rmsb$Slope,rdl_fmsb$Slope,
+           rdl_gm_msb$Slope,rdl_gm_len$Slope,
+           fdl_stature$Slope,fdl_rmsb$Slope,fdl_fmsb$Slope,
+           fdl_gm_msb$Slope,fdl_gm_len$Slope,
+           tdl_stature$Slope,tdl_rmsb$Slope,tdl_fmsb$Slope,
+           tdl_gm_msb$Slope,tdl_gm_len$Slope)
+
+compDF <- data.frame(long_bone, method, slope)
+compDF$slope <- as.numeric(as.character(compDF$slope))
+compDF$long_bone <- factor(compDF$long_bone, 
+                           levels=c("Humerus","Radius","Femur","Tibia"))
+compDF$method <- factor(compDF$method, 
+                        levels=c("Stature","RMSB","FMSB",
+                                 "GM_Midshaft","GM_Length"))
+
+write.csv(compDF,"results/za_allometry_coefs.csv",row.names=FALSE)  # save
+```
+
+
+# Data Visualization  {#visualize}
+
+## Figure 1
+**Caption:** Sample age distributions by country.
+
+```{r Fig 1}
+# Add location column and subset for medrec, agey, and location
+us_sub <- us %>% mutate(location="U.S.") %>% select(medrec,agey,location)
+za_sub <- za %>%mutate(location="Z.A.") %>% select(medrec,agey,location)
+
+# Combine into full data frame
+full_data <- rbind(us_sub, za_sub)
+
+# Plot sample distribution as bar chart
+ggplot(full_data, aes(x=as.integer(agey))) + 
+  geom_bar(fill="grey75") + 
+  elaine_theme + labs(x="Age (years)", y="Count") + 
+  scale_x_continuous(breaks=0:12) + 
+  geom_text(stat="count", aes(label=..count..), color="black") + 
+  facet_grid(rows=vars(location), scale="free_y")
+```
+
+## Figure 2
+**Caption:** Chi-square Q-Q plot to visualize multivariate normality. The solid black line represents multivariate normality, and the deviation of the pattern of filled circles indicates non-normality of the U.S. data.
+
+*Figure generated when testing for [multivariate normality](#Fig2)*
+
+## Figure 3
+**Caption:** Inter-long bone allometric relationships. The solid red line across slope=1.0 represents isometry. Solid line = stature, dashed line = RMSB, dotted line = FMSB, dot-dash line = GM midshaft breadth, two-dash line = GM diaphyseal length.
+
+```{r Fig3, fig.width=8, fig.height=4}
+## Import allometry coefficient data
+us_coef <- read.csv("results/us_allometry_coefs.csv")
+za_coef <- read.csv("results/za_allometry_coefs.csv")
+
+# Assign long bones as factors
+us_coef$long_bone <- factor(us_coef$long_bone, 
+                            levels=c("Humerus","Radius","Femur","Tibia"))
+za_coef$long_bone <- factor(za_coef$long_bone, 
+                            levels=c("Humerus","Radius","Femur","Tibia"))
+
+# Plot U.S. data as point and line graph
+us_plot <- ggplot(us_coef, aes(x=long_bone, y=slope, group=method)) + 
+  geom_hline(yintercept=1, linetype="solid", size=0.5, col="red",alpha=0.5) + 
+  geom_point(pch=1,size=3) + geom_line(aes(linetype=method), size=1) + 
+  scale_y_continuous(limits=c(0.8,1.6),breaks=seq(0.8,1.6,0.2)) + 
+  elaine_theme + scale_linetype_manual(values=c("solid","dashed","dotted",
+                                                "dotdash","twodash")) +
+  labs(x="Long Bone", y="Allometry Coefficient", title="a) U.S. Sample") + 
+  theme(legend.position="none", plot.title=element_text(hjust=0))
+
+# Plot Z.A. data as point and line graph
+za_plot <- ggplot(za_coef, aes(x=long_bone, y=slope, group=method)) + 
+  geom_hline(yintercept=1, linetype="solid", size=0.5, col="red",alpha=0.5) + 
+  geom_point(pch=1,size=3) + geom_line(aes(linetype=method), size=1) + 
+  scale_y_continuous(limits=c(0.8,1.6),breaks=seq(0.8,1.6,0.2)) + 
+  elaine_theme + scale_linetype_manual(values=c("solid","dashed","dotted",
+                                                "dotdash","twodash")) +
+  labs(x="Long Bone", y="Allometry Coefficient", title="b) Z.A. Sample") + 
+  theme(legend.position="none", plot.title=element_text(hjust=0))
+
+# Arrange Plots Side-by-Side
+grid.arrange(us_plot, za_plot, ncol=2)
+```
+
+## Figure 4
+**Caption:** Bivariate relationship between stature (x) and alternative size variables (y) in log-normal space. The solid green line represents isometry. Note the magnitude and directionality of the black, non-solid line crossing the isometry line.
+
+```{r Fig4}
+# Import RMA coefficient results with slope and intercept
+rma_results <- read.csv("results/rma_coefficients.csv")
+
+# Import U.S. Log data
+us_log <- readRDS("data/us_log.rds")
+
+# Individual plot for RMSB v. Stature
+rmsb_idx <- which(rma_results$size_var=="RMSB")  # index for RMSB
+c_rmsb <- ggplot(us_log, aes(x=stature,y=RMSB)) + 
+  geom_point(pch=1,col="grey") + 
+  geom_abline(slope=1, 
+              intercept=mean(us_log$RMSB)-mean(us_log$stature),
+              size=1.15,col="#009E73") + 
+  geom_abline(slope=rma_results$slope[rmsb_idx],
+              intercept=rma_results$intercept[rmsb_idx],
+              size=1.15,linetype="dashed") + 
+  labs(x=expression(paste(italic(ln),"(Stature)")),
+       y=expression(paste(italic(ln),"(RMSB)"))) + elaine_theme
+
+# Individual plot for FMSB v. Stature
+fmsb_idx <- which(rma_results$size_var=="FMSB")  # index for FMSB
+c_fmsb <- ggplot(us_log, aes(x=stature,y=FMSB)) + 
+  geom_point(pch=1,col="grey") + 
+  geom_abline(slope=1,
+              intercept=mean(us_log$FMSB)-mean(us_log$stature),
+              size=1.15,col="#009E73") + 
+  geom_abline(slope=rma_results$slope[fmsb_idx],
+              intercept=rma_results$intercept[fmsb_idx],
+              size=1.15,linetype="dotted") +
+  labs(x=expression(paste(italic(ln),"(Stature)")),
+       y=expression(paste(italic(ln),"(FMSB)"))) + elaine_theme
+
+# Individual plot for GM_msb v. Stature
+gm_msb_idx <- which(rma_results$size_var=="GM_msb")  # index for GM_msb 
+c_gm_msb <- ggplot(us_log, aes(x=stature,y=GM_msb)) + 
+  geom_point(pch=1,col="grey") + 
+  geom_abline(slope=1,
+              intercept=mean(us_log$GM_msb)-mean(us_log$stature),
+              size=1.15,col="#009E73") + 
+  geom_abline(slope=rma_results$slope[gm_msb_idx],
+              intercept=rma_results$intercept[gm_msb_idx],
+              size=1.15,linetype="dotdash") +
+  labs(x=expression(paste(italic(ln),"(Stature)")),
+       y=expression(paste(italic(ln),"(GM_Midshaft)"))) + elaine_theme
+
+# Individual plot for GM_len v. Stature
+gm_len_idx <- which(rma_results$size_var=="GM_len")  # index for GM_len
+c_gm_len <- ggplot(us_log, aes(x=stature,y=GM_len)) + 
+  geom_point(pch=1,col="grey") + 
+  geom_abline(slope=1,
+              intercept=mean(us_log$GM_len)-mean(us_log$stature),
+              size=1.15,col="#009E73") + 
+  geom_abline(slope=rma_results$slope[gm_len_idx],
+              intercept=rma_results$intercept[gm_len_idx],
+              size=1.15,linetype="twodash") +
+  labs(x=expression(paste(italic(ln),"(Stature)")),
+       y=expression(paste(italic(ln),"(GM_Length)"))) + elaine_theme
+
+# Arrange plots as 2x2
+grid.arrange(c_rmsb,c_fmsb,c_gm_msb,c_gm_len,nrow=2,
+             layout_matrix=rbind(c(1,1,2,2),
+                                 c(3,3,4,4)))
+```
+
+## Figure 5
+**Caption:** Allometry coefficient relationships between long bone diaphyseal lengths from averaged coefficients from [Auerbach & Sylvester (2011)](https://onlinelibrary.wiley.com/doi/pdf/10.1002/ajpa.21418?casa_token=uBT2LwYVMWsAAAAA:ZwCvxoJ6r2NAj7OeNNYD2x11ZzzJllI2RlUo9ukCRIowyrkRkURsgBWABHb2tgMApsusAQHHA7--Tkc) on the left and the current study on the right. The solid red line across slope=1.0 represents isometry. Solid line = stature, dotted line = GM diaphyseal length.
+
+```{r Fig5, fig.width=8, fig.height=4}
+# Import U.S. and Auerbach & Sylvester coefficient data
+us_coef <- read.csv("results/us_allometry_coefs.csv")
+as_coef <- read.csv("data/Auerbach&Sylvester_2011.csv")
+
+# Add study column
+us_coef$study <- "Current Study"
+
+# Combine data
+comp_coef <- rbind(us_coef[which(us_coef$method %in% 
+                                     c("Stature","GM_Length")),], as_coef)
+
+# Define long bone as factor
+comp_coef$long_bone <- factor(comp_coef$long_bone, 
+                              levels=c("Humerus","Radius","Femur","Tibia"))
+
+## Plot
+ggplot(comp_coef, aes(x=long_bone, y=slope, group=method)) + 
+  geom_hline(yintercept=1, linetype="solid", size=0.5, col="red", alpha=0.5) + 
+  geom_line(aes(linetype=method), size=1) + geom_point(pch=1, size=3) + 
+  scale_y_continuous(breaks=seq(0.8,1.6,by=0.2)) + 
+  scale_linetype_manual(values=c("dotted","solid")) + 
+  labs(x="Long Bone", y="Allometry Coefficient") + 
+  facet_grid(cols=vars(study)) + elaine_theme + theme(legend.position="none") 
+```
+
