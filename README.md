@@ -2,7 +2,7 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6481478.svg)](https://doi.org/10.5281/zenodo.6481478)
 
 This repository contains full documentation for the paper:
-> Chu, E.Y., Stull, K.E., & Sylvester, A.D. (2022). An alternative size variable for allometric investigations in subadults. *In review.*
+> Chu, E.Y., Stull, K.E., & Sylvester, A.D. (2022). An alternative size variable for allometric investigations in subadults. *American Jounral of Biological Anthropology 179*(3), 471-480. DOI:10.1002/ajpa.24617.
 
 To run the code for this paper locally, please ensure that [R](https://cran.r-project.org/), and optionally [RStudio](https://www.rstudio.com/), are installed on the local system. 
 
